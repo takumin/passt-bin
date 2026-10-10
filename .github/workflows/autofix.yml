@@ -1,0 +1,28 @@
+name: autofix.ci
+on:
+  push:
+    branches: ['main']
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: autofix-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+jobs:
+  autofix:
+    name: autofix.ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - name: Checkout
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      with:
+        persist-credentials: false
+    - name: Setup Aqua
+      uses: aquaproj/aqua-installer@ea518c135a02fc11ff8024364510c181a5c6b342 # v4.0.3
+      with:
+        aqua_version: v2.55.1
+    - name: Format
+      run: task format
+    - name: Autofix
+      uses: autofix-ci/action@635ffb0c9798bd160680f18fd73371e355b85f27 # v1.3.2

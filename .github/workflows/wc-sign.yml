@@ -1,0 +1,74 @@
+name: Sign
+on:
+  workflow_call:
+permissions: {}
+concurrency:
+  group: sign-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+jobs:
+  sign:
+    name: Sign
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      id-token: write
+      attestations: write
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+      with:
+        path: dist/
+        pattern: artifact-*
+        merge-multiple: true
+    - name: Check artifacts
+      shell: bash -euo pipefail {0}
+      run: tree --charset ASCII dist/
+    - name: Verify sha256sum
+      shell: bash -euo pipefail {0}
+      run: |-
+        echo 'Verify sha256sum'
+        cd dist
+        for f in $(find . -type f -name '*.sha256sum' -printf '%f\n' | sort); do
+          sha256sum -c "$f"
+        done
+    - name: Merge sha256sum
+      shell: bash -euo pipefail {0}
+      run: |-
+        echo 'Merge sha256sums'
+        cd dist
+        echo -n > SHA256SUMS
+        for f in $(find . -type f -name '*.sha256sum' -printf '%f\n' | sort); do
+          < "$f" tee -a SHA256SUMS
+          rm "$f"
+        done
+    - name: Verify sha256sums
+      shell: bash -euo pipefail {0}
+      run: |-
+        echo 'Verify sha256sums'
+        cd dist
+        sha256sum -c SHA256SUMS
+    - name: Generate artifact attestation
+      if: ${{ !startsWith(github.event_name, 'pull') }}
+      uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+      with:
+        subject-path: 'dist/*'
+    - name: Setup cosign
+      if: ${{ !startsWith(github.event_name, 'pull') }}
+      uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
+    - name: Generate code signing with cosign
+      if: ${{ !startsWith(github.event_name, 'pull') }}
+      shell: bash -euo pipefail {0}
+      run: |-
+        echo 'Generate code signing with cosign'
+        cd dist
+        for f in $(find . -type f -printf '%f\n' | sort); do
+          cosign sign-blob "$f" -y --output-certificate "$f.cert" --output-signature "$f.sig"
+        done
+    - name: Check artifacts
+      shell: bash -euo pipefail {0}
+      run: tree --charset ASCII dist/
+    - name: Upload artifacts
+      uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+      with:
+        name: release-artifacts
+        path: 'dist/*'

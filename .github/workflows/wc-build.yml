@@ -1,0 +1,125 @@
+name: Build
+on:
+  workflow_call:
+    inputs:
+      build-version:
+        default: ""
+        required: false
+        type: string
+permissions: {}
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+jobs:
+  matrix:
+    name: Matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      BUILD_VERSION: ${{ inputs.build-version }}
+    outputs:
+      targets: ${{ steps.matrix.outputs.result }}
+    steps:
+    - name: Checkout
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      with:
+        persist-credentials: false
+        sparse-checkout: |-
+          .aqua
+          tasks
+    - name: Setup aqua
+      uses: aquaproj/aqua-installer@ea518c135a02fc11ff8024364510c181a5c6b342 # v4.0.3
+      with:
+        aqua_version: v2.55.1
+    - name: Check valid version
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      shell: bash -euo pipefail {0}
+      run: |-
+        task version:check
+    - name: Generate matrix
+      id: matrix
+      shell: bash -euo pipefail {0}
+      run: |-
+        echo "result=$(task build:matrix)" >> "$GITHUB_OUTPUT"
+    - name: Check matrix
+      env:
+        BUILD_MATRIX: ${{ steps.matrix.outputs.result }}
+      shell: bash -euo pipefail {0}
+      run: |-
+        echo "${BUILD_MATRIX}" | jq
+  build:
+    needs: matrix
+    name: ${{ matrix.version }} / ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.matrix.outputs.targets) }}
+    env:
+      BUILD_TARGET: ${{ matrix.target }}
+      BUILD_VERSION: ${{ matrix.version }}
+    steps:
+    - name: Checkout
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      with:
+        persist-credentials: false
+    - name: Setup aqua
+      uses: aquaproj/aqua-installer@ea518c135a02fc11ff8024364510c181a5c6b342 # v4.0.3
+      with:
+        aqua_version: v2.55.1
+    - name: Restore aqua tools cache
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        key: aqua-${{ hashFiles('.aqua/pkgs/zig.yaml') }}
+        path: ~/.local/share/aquaproj-aqua/
+    - name: Restore build cache
+      id: build-cache-restore
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        key: build-${{ matrix.version }}-${{ matrix.target }}-${{ hashFiles('.github/cache-version') }}
+        path: .build/
+    - name: Build binary
+      shell: bash -euo pipefail {0}
+      run: |-
+        task build:prepare
+    - name: Generate sha256sum
+      shell: bash -euo pipefail {0}
+      run: |-
+        task build:sha256sum:verify
+    - name: Get latest version
+      id: latest_version
+      shell: bash -euo pipefail {0}
+      run: echo "result=$(task version:latest)" >> "$GITHUB_OUTPUT"
+    - name: Save build cache
+      if: >-
+        github.ref == 'refs/heads/main'
+        && steps.build-cache-restore.outputs.cache-hit != 'true'
+        && steps.latest_version.outputs.result == env.BUILD_VERSION
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        key: ${{ steps.build-cache-restore.outputs.cache-primary-key }}
+        path: .build/
+    - name: Get artifact name
+      id: artifact_name
+      shell: bash -euo pipefail {0}
+      run: echo "result=$(task build:name)" >> "$GITHUB_OUTPUT"
+    - name: Get binary name
+      id: binary_name
+      shell: bash -euo pipefail {0}
+      run: echo "result=$(task build:binname)" >> "$GITHUB_OUTPUT"
+    - name: Get binary path
+      id: binary_path
+      shell: bash -euo pipefail {0}
+      run: echo "result=$(task build:binpath)" >> "$GITHUB_OUTPUT"
+    - name: Upload artifact
+      uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+      with:
+        name: artifact-${{ steps.artifact_name.outputs.result }}
+        path: |-
+          ${{ steps.binary_path.outputs.result }}
+          ${{ steps.binary_path.outputs.result }}.sha256sum

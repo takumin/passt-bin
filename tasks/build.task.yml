@@ -1,0 +1,260 @@
+# https://taskfile.dev
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: '3'
+
+set: [pipefail]
+shopt: [globstar]
+
+vars:
+  LATEST_VERSION:
+    sh: coreutils test -f version.json && jq -r '.version' version.json || echo 'unknown'
+  BUILD_TARGET: '{{env "BUILD_TARGET" | default "x86_64-linux-gnu"}}'
+  GLIBC_VERSION: '2.31'
+  MATRIX_TARGETS:
+  - aarch64-linux-gnu
+  - x86_64-linux-gnu
+
+includes:
+  tool:
+    taskfile: tool.task.yml
+    internal: true
+
+tasks:
+  default:
+    desc: '{{.TASK}}'
+    silent: true
+    cmds:
+    - task: sha256sum:verify
+
+  matrix:
+    desc: '{{.TASK}}'
+    silent: true
+    deps:
+    - task: tool:aqua:tag:jq
+    vars:
+      VERSION: '{{env "BUILD_VERSION" | default .LATEST_VERSION}}'
+    cmds:
+    - >-
+      echo '{{ .MATRIX_TARGETS | toJson }}'
+      | jq -cM '{include: map({version: "{{.VERSION}}", target: .})}'
+
+  version:
+    desc: '{{.TASK}}'
+    silent: true
+    vars:
+      VERSION: '{{env "BUILD_VERSION" | default .LATEST_VERSION}}'
+    cmds:
+    - echo '{{.VERSION}}'
+
+  tag:
+    desc: '{{.TASK}}'
+    silent: true
+    vars:
+      VERSION: '{{env "BUILD_VERSION" | default .LATEST_VERSION}}'
+      VALID: '{{regexMatch "^[0-9]{4}_[0-9]{2}_[0-9]{2}\\.[0-9a-f]+$" .VERSION}}'
+    preconditions:
+    - sh: coreutils test '{{.VALID}}' = 'true'
+      msg: 'unexpected passt version: {{.VERSION}}'
+    cmds:
+    # 2026_10_02.cba3570 -> v2026.10.2
+    - >-
+      {{- if eq .VALID "true" -}}
+      {{- $d := index (splitList "." .VERSION) 0 | splitList "_" -}}
+      echo 'v{{index $d 0 | atoi}}.{{index $d 1 | atoi}}.{{index $d 2 | atoi}}'
+      {{- end -}}
+
+  name:
+    desc: '{{.TASK}}'
+    silent: true
+    cmds:
+    - echo 'passt-{{.BUILD_TARGET}}'
+
+  binname:
+    desc: '{{.TASK}}'
+    silent: true
+    vars:
+      NAME:
+        sh: task build:name
+    cmds:
+    - echo '{{.NAME}}.tar.gz'
+
+  binpath:
+    desc: '{{.TASK}}'
+    silent: true
+    vars:
+      VERSION:
+        sh: task build:version
+      BINNAME:
+        sh: task build:binname
+    cmds:
+    - echo '{{.ROOT_DIR}}/.build/{{.VERSION}}/dist/{{.BINNAME}}'
+
+  download:
+    desc: '{{.TASK}}'
+    dir: '{{.ROOT_DIR}}'
+    deps:
+    - task: tool:aqua:tag:jq
+    vars:
+      VERSION: '{{env "BUILD_VERSION" | default .LATEST_VERSION}}'
+    status:
+    - coreutils test -f '{{.ROOT_DIR}}/.build/passt-{{.VERSION}}.tar.gz'
+    cmds:
+    - cmd: coreutils mkdir -p '{{.ROOT_DIR}}/.build'
+      silent: true
+    # TODO: which curl command
+    - >-
+      curl -fsSLo '{{.ROOT_DIR}}/.build/passt-{{.VERSION}}.tar.gz'
+      "https://passt.top/passt/snapshot/passt-{{.VERSION}}.tar.gz"
+
+  extract:
+    desc: '{{.TASK}}'
+    dir: '{{.ROOT_DIR}}'
+    deps:
+    - task: tool:aqua:tag:coreutils
+    - task: download
+    vars:
+      VERSION: '{{env "BUILD_VERSION" | default .LATEST_VERSION}}'
+    sources:
+    - '{{.ROOT_DIR}}/.build/passt-{{.VERSION}}.tar.gz'
+    generates:
+    - '{{.ROOT_DIR}}/.build/{{.VERSION}}/{{.BUILD_TARGET}}/src/Makefile'
+    cmds:
+    - cmd: coreutils mkdir -p '{{.ROOT_DIR}}/.build/{{.VERSION}}/{{.BUILD_TARGET}}/src'
+      silent: true
+    # TODO: which tar command
+    - >-
+      tar -xf '{{.ROOT_DIR}}/.build/passt-{{.VERSION}}.tar.gz'
+      -C '{{.ROOT_DIR}}/.build/{{.VERSION}}/{{.BUILD_TARGET}}/src'
+      --strip-components 1
+
+  binary:
+    desc: '{{.TASK}}'
+    dir: '{{.ROOT_DIR}}/.build/{{.VERSION}}/{{.BUILD_TARGET}}/src'
+    deps:
+    - task: tool:aqua:tag:zig
+    - task: extract
+    vars:
+      VERSION: '{{env "BUILD_VERSION" | default .LATEST_VERSION}}'
+      MAKE_ARGS: >-
+        CC='zig cc -target {{.BUILD_TARGET}}.{{.GLIBC_VERSION}}'
+        TARGET='{{.BUILD_TARGET}}'
+        VERSION='{{.VERSION}}'
+        LDFLAGS='-s {{.ROOT_DIR}}/src/cpu_model.c'
+        prefix=/usr/local
+    sources:
+    - '{{.ROOT_DIR}}/.build/{{.VERSION}}/{{.BUILD_TARGET}}/src/Makefile'
+    - '{{.ROOT_DIR}}/src/cpu_model.c'
+    generates:
+    - '{{.ROOT_DIR}}/.build/{{.VERSION}}/{{.BUILD_TARGET}}/pkg/usr/local/bin/passt'
+    cmds:
+    - cmd: coreutils rm -rf '{{.ROOT_DIR}}/.build/{{.VERSION}}/{{.BUILD_TARGET}}/pkg'
+      silent: true
+    - make -j"$(nproc)" {{.MAKE_ARGS}} all
+    - make {{.MAKE_ARGS}} DESTDIR='{{.ROOT_DIR}}/.build/{{.VERSION}}/{{.BUILD_TARGET}}/pkg' install
+
+  prepare:
+    desc: '{{.TASK}}'
+    dir: '{{.ROOT_DIR}}/.build/{{.VERSION}}/{{.BUILD_TARGET}}/pkg/usr/local'
+    deps:
+    - task: tool:aqua:tag:coreutils
+    - task: binary
+    vars:
+      VERSION: '{{env "BUILD_VERSION" | default .LATEST_VERSION}}'
+      DIST_BINNAME: 'passt-{{.BUILD_TARGET}}.tar.gz'
+    sources:
+    - '**/*'
+    generates:
+    - '{{.ROOT_DIR}}/.build/{{.VERSION}}/dist/{{.DIST_BINNAME}}'
+    cmds:
+    - cmd: coreutils mkdir -p '{{.ROOT_DIR}}/.build/{{.VERSION}}/dist'
+      silent: true
+    # TODO: which tar command
+    - >-
+      tar --sort=name --owner=0 --group=0 --numeric-owner
+      --mode='u+rwX,go+rX,go-w'
+      --mtime='@0'
+      -cf - bin share
+      | gzip -9n > '{{.ROOT_DIR}}/.build/{{.VERSION}}/dist/{{.DIST_BINNAME}}'
+
+  sha256sum:
+    desc: '{{.TASK}}'
+    dir: '{{.ROOT_DIR}}/.build/{{.VERSION}}/dist'
+    deps:
+    - task: tool:aqua:tag:coreutils
+    - task: prepare
+    vars:
+      VERSION: '{{env "BUILD_VERSION" | default .LATEST_VERSION}}'
+      BINNAME: 'passt-{{.BUILD_TARGET}}.tar.gz'
+    sources:
+    - '{{.BINNAME}}'
+    generates:
+    - '{{.BINNAME}}.sha256sum'
+    cmds:
+    - coreutils sha256sum -b "{{.BINNAME}}" | coreutils tee "{{.BINNAME}}.sha256sum"
+
+  sha256sum:verify:
+    desc: '{{.TASK}}'
+    dir: '{{.ROOT_DIR}}/.build/{{.VERSION}}/dist'
+    deps:
+    - task: tool:aqua:tag:coreutils
+    - task: sha256sum
+    vars:
+      VERSION: '{{env "BUILD_VERSION" | default .LATEST_VERSION}}'
+      BINNAME: 'passt-{{.BUILD_TARGET}}.tar.gz'
+    sources:
+    - '{{.BINNAME}}'
+    generates:
+    - '{{.ROOT_DIR}}/.build/{{.VERSION}}/.done_sha256sum_verify_{{.BUILD_TARGET}}'
+    cmds:
+    - coreutils sha256sum -c "{{.BINNAME}}.sha256sum"
+    - cmd: touch '{{.ROOT_DIR}}/.build/{{.VERSION}}/.done_sha256sum_verify_{{.BUILD_TARGET}}'
+      silent: true
+
+  cosign:
+    desc: '{{.TASK}}'
+    dir: '{{.ROOT_DIR}}/.build/{{.VERSION}}/dist'
+    deps:
+    - task: prepare
+    vars:
+      VERSION: '{{env "BUILD_VERSION" | default .LATEST_VERSION}}'
+      BINNAME: 'passt-{{.BUILD_TARGET}}.tar.gz'
+    sources:
+    - '{{.BINNAME}}'
+    generates:
+    - '{{.BINNAME}}.cert'
+    - '{{.BINNAME}}.sig'
+    cmds:
+    - >-
+      cosign sign-blob {{.BINNAME}}
+      -y
+      --output-certificate {{.BINNAME}}.cert
+      --output-signature {{.BINNAME}}.sig
+
+  cosign:verify:
+    desc: '{{.TASK}}'
+    dir: '{{.ROOT_DIR}}/.build/{{.VERSION}}/dist'
+    deps:
+    - task: cosign
+    vars:
+      VERSION: '{{env "BUILD_VERSION" | default .LATEST_VERSION}}'
+      BINNAME: 'passt-{{.BUILD_TARGET}}.tar.gz'
+    requires:
+      vars:
+      - CERTIFICATE_IDENTITY
+      - CERTIFICATE_OIDC_ISSUER
+    sources:
+    - '{{.BINNAME}}'
+    - '{{.BINNAME}}.cert'
+    - '{{.BINNAME}}.sig'
+    generates:
+    - '{{.ROOT_DIR}}/.build/{{.VERSION}}/.done_cosign_verify'
+    cmds:
+    - >-
+      cosign verify-blob '{{.BINNAME}}'
+      --certificate '{{.BINNAME}}.cert'
+      --signature '{{.BINNAME}}.sig'
+      --certificate-identity '{{.CERTIFICATE_IDENTITY}}'
+      --certificate-oidc-issuer '{{.CERTIFICATE_OIDC_ISSUER}}'
+    - cmd: touch '{{.ROOT_DIR}}/.build/{{.VERSION}}/.done_cosign_verify'
+      silent: true
