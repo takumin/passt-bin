@@ -222,14 +222,12 @@ tasks:
     sources:
     - '{{.BINNAME}}'
     generates:
-    - '{{.BINNAME}}.cert'
-    - '{{.BINNAME}}.sig'
+    - '{{.BINNAME}}.sigstore.json'
     cmds:
     - >-
       cosign sign-blob {{.BINNAME}}
       -y
-      --output-certificate {{.BINNAME}}.cert
-      --output-signature {{.BINNAME}}.sig
+      --bundle {{.BINNAME}}.sigstore.json
 
   cosign:verify:
     desc: '{{.TASK}}'
@@ -245,15 +243,13 @@ tasks:
       - CERTIFICATE_OIDC_ISSUER
     sources:
     - '{{.BINNAME}}'
-    - '{{.BINNAME}}.cert'
-    - '{{.BINNAME}}.sig'
+    - '{{.BINNAME}}.sigstore.json'
     generates:
     - '{{.ROOT_DIR}}/.build/{{.VERSION}}/.done_cosign_verify'
     cmds:
     - >-
       cosign verify-blob '{{.BINNAME}}'
-      --certificate '{{.BINNAME}}.cert'
-      --signature '{{.BINNAME}}.sig'
+      --bundle '{{.BINNAME}}.sigstore.json'
       --certificate-identity '{{.CERTIFICATE_IDENTITY}}'
       --certificate-oidc-issuer '{{.CERTIFICATE_OIDC_ISSUER}}'
     - cmd: touch '{{.ROOT_DIR}}/.build/{{.VERSION}}/.done_cosign_verify'

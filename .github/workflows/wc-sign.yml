@@ -62,7 +62,7 @@ jobs:
         echo 'Generate code signing with cosign'
         cd dist
         for f in $(find . -type f -printf '%f\n' | sort); do
-          cosign sign-blob "$f" -y --output-certificate "$f.cert" --output-signature "$f.sig"
+          cosign sign-blob "$f" -y --bundle "$f.sigstore.json"
         done
     - name: Check artifacts
       shell: bash -euo pipefail {0}

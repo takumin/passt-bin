@@ -46,7 +46,7 @@ jobs:
         echo 'Verify artifact attestation'
         cd dist
         set -x
-        for f in $(find . -type f -not -name '*.cert' -a -not -name '*.sig' -printf '%f\n' | sort); do
+        for f in $(find . -type f -not -name '*.sigstore.json' -printf '%f\n' | sort); do
           gh attestation verify "$f" -R "${GITHUB_REPOSITORY}"
         done
       env:
@@ -65,11 +65,10 @@ jobs:
         echo 'Verify code signing with cosign'
         cd dist
         set -x
-        for f in $(find . -type f -not -name '*.cert' -a -not -name '*.sig' -printf '%f\n' | sort); do
+        for f in $(find . -type f -not -name '*.sigstore.json' -printf '%f\n' | sort); do
           declare -a args
           args=("verify-blob" "$f")
-          args+=("--certificate" "$f.cert")
-          args+=("--signature" "$f.sig")
+          args+=("--bundle" "$f.sigstore.json")
           args+=("--certificate-identity" "$CERTIFICATE_IDENTITY")
           args+=("--certificate-oidc-issuer" "$CERTIFICATE_OIDC_ISSUER")
           cosign "${args[@]}"
@@ -105,8 +104,7 @@ jobs:
         Cosign Verifying Signatures:
         \`\`\`console
         $ cosign verify-blob "[artifact path]" \\
-            --certificate "[certificate path]" \\
-            --signature "[signature path]" \\
+            --bundle "[artifact path].sigstore.json" \\
             --certificate-identity \\
             "$CERTIFICATE_IDENTITY" \\
             --certificate-oidc-issuer \\
