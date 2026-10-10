@@ -3,8 +3,8 @@ Prebuilt binaries of [passt](https://passt.top/) built with `zig cc`.
 
 | Target | Minimum glibc |
 | --- | --- |
-| `x86_64-linux-gnu` | 2.31 |
-| `aarch64-linux-gnu` | 2.31 |
+| `x86_64-linux-gnu` | 2.28 |
+| `aarch64-linux-gnu` | 2.28 |
 
 Each release asset is a tarball laid out for `/usr/local`:
 
@@ -19,6 +19,7 @@ share/man/man1/*.1
 share/doc/passt/*
 ```
 
+The minimum glibc follows the oldest supported release of Ubuntu, Debian and RHEL (RHEL 8 as of 2026-10).
 The binaries are dynamically linked against glibc, so `--runas` accepts user and group names (NSS lookups work).
 `PAGE_SIZE` is fixed at build time to 4096.
 
