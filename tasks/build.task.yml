@@ -10,7 +10,7 @@ vars:
   LATEST_VERSION:
     sh: coreutils test -f version.json && jq -r '.version' version.json || echo 'unknown'
   BUILD_TARGET: '{{env "BUILD_TARGET" | default "x86_64-linux-gnu"}}'
-  GLIBC_VERSION: '2.28'
+  GLIBC_VERSION: '2.25'
   MATRIX_TARGETS:
   - aarch64-linux-gnu
   - x86_64-linux-gnu
