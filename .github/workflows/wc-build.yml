@@ -32,7 +32,7 @@ jobs:
     - name: Setup aqua
       uses: aquaproj/aqua-installer@82d0e83878a8657c4a6f2ff1755d3bfbfc67f329 # v4.1.0
       with:
-        aqua_version: v2.55.1
+        aqua_version: v2.64.0
     - name: Check valid version
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -71,7 +71,7 @@ jobs:
     - name: Setup aqua
       uses: aquaproj/aqua-installer@82d0e83878a8657c4a6f2ff1755d3bfbfc67f329 # v4.1.0
       with:
-        aqua_version: v2.55.1
+        aqua_version: v2.64.0
     - name: Restore aqua tools cache
       uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
