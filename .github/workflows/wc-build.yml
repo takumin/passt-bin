@@ -73,13 +73,13 @@ jobs:
       with:
         aqua_version: v2.64.0
     - name: Restore aqua tools cache
-      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         key: aqua-${{ hashFiles('.aqua/pkgs/zig.yaml') }}
         path: ~/.local/share/aquaproj-aqua/
     - name: Restore build cache
       id: build-cache-restore
-      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         key: build-${{ matrix.version }}-${{ matrix.target }}-${{ hashFiles('.github/cache-version') }}
         path: .build/
@@ -100,7 +100,7 @@ jobs:
         github.ref == 'refs/heads/main'
         && steps.build-cache-restore.outputs.cache-hit != 'true'
         && steps.latest_version.outputs.result == env.BUILD_VERSION
-      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         key: ${{ steps.build-cache-restore.outputs.cache-primary-key }}
         path: .build/
